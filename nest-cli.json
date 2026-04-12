@@ -1,0 +1,3 @@
+nest-cli:
+  collection: '@nestjs/schematics'
+  sourceRoot: src

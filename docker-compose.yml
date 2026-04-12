@@ -1,0 +1,50 @@
+version: '3.9'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: nestjs-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: nestjs_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  nestjs-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: nestjs-api
+    environment:
+      NODE_ENV: development
+      PORT: 3000
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USERNAME: postgres
+      DB_PASSWORD: postgres
+      DB_NAME: nestjs_db
+      DB_SYNCHRONIZE: "true"
+      DB_LOGGING: "true"
+      JWT_SECRET: dev-secret-key
+      CORS_ORIGIN: "http://localhost:3000,http://localhost:4200"
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - .:/app
+      - node_modules:/app/node_modules
+    command: npm run start:dev
+
+volumes:
+  postgres_data:
+  node_modules:

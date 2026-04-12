@@ -1,0 +1,214 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ develop, main ]
+  pull_request:
+    branches: [ develop, main ]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  # ===== STAGE 1: Install & Lint =====
+  install-and-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run ESLint
+        run: npm run lint
+
+      - name: Check code formatting
+        run: npm run format -- --check
+
+  # ===== STAGE 2: Test =====
+  test:
+    needs: install-and-lint
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: nestjs_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm run test:cov
+        env:
+          DB_HOST: localhost
+          DB_PORT: 5432
+          DB_USERNAME: postgres
+          DB_PASSWORD: postgres
+          DB_NAME: nestjs_test
+
+      - name: Upload coverage reports
+        uses: codecov/codecov-action@v3
+        with:
+          files: ./coverage/coverage-final.json
+          fail_ci_if_error: false
+
+  # ===== STAGE 3: SonarQube Analysis =====
+  sonarqube:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Download coverage reports
+        uses: actions/download-artifact@v3
+
+      - name: SonarQube Scan
+        uses: SonarSource/sonarcloud-github-action@master
+        with:
+          args: >
+            -Dsonar.projectKey=nestjs-backend-mvc
+            -Dsonar.organization=your-org
+            -Dsonar.sources=src
+            -Dsonar.exclusions=**/*spec.ts,**/*dto.ts
+            -Dsonar.coverage.exclusions=**/*spec.ts,src/main.ts
+            -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info
+            -Dsonar.qualitygate.wait=true
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ===== STAGE 4: Build =====
+  build:
+    needs: ["install-and-lint", "test", "sonarqube"]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build application
+        run: npm run build
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Log in to Container Registry
+        if: github.event_name == 'push'
+        uses: docker/login-action@v2
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v4
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha
+
+      - name: Build and push Docker image
+        if: github.event_name == 'push'
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache
+          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache,mode=max
+
+  # ===== STAGE 5: Deploy (solo en develop y main) =====
+  deploy:
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main')
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Configure kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'latest'
+
+      - name: Deploy to Kubernetes
+        run: |
+          mkdir -p $HOME/.kube
+          echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > $HOME/.kube/config
+          chmod 600 $HOME/.kube/config
+          
+          # Determinar el namespace según la rama
+          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            NAMESPACE="production"
+            ENVIRONMENT="prod"
+          else
+            NAMESPACE="staging"
+            ENVIRONMENT="staging"
+          fi
+          
+          # Crear namespace si no existe
+          kubectl create namespace $NAMESPACE --dry-run=client -o yaml | kubectl apply -f -
+          
+          # Aplicar manifiestos de Kubernetes
+          kubectl apply -f k8s/namespace.yaml
+          kubectl apply -f k8s/deployment.yaml -n $NAMESPACE
+          kubectl apply -f k8s/service.yaml -n $NAMESPACE
+          
+          # Rollout restart para forzar actualización de imagen
+          kubectl rollout restart deployment/nestjs-api -n $NAMESPACE
+          kubectl rollout status deployment/nestjs-api -n $NAMESPACE --timeout=5m
+
+      - name: Notify deployment
+        if: success()
+        run: |
+          echo "✅ Deploy completado exitosamente en ${{ github.ref }}"
+          
+      - name: Notify failure
+        if: failure()
+        run: |
+          echo "❌ Error en deploy. Verificar logs."
+          exit 1

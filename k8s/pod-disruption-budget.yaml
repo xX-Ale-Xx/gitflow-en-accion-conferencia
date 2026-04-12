@@ -1,0 +1,10 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: nestjs-api-pdb
+  namespace: default
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: nestjs-api
