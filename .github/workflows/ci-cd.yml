@@ -96,7 +96,7 @@ jobs:
         with:
           args: >
             -Dsonar.projectKey=nestjs-backend-mvc
-            -Dsonar.organization=your-org
+            -Dsonar.organization=xx-ale-xx
             -Dsonar.sources=src
             -Dsonar.exclusions=**/*spec.ts,**/*dto.ts
             -Dsonar.coverage.exclusions=**/*spec.ts,src/main.ts
@@ -162,53 +162,132 @@ jobs:
           cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache
           cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache,mode=max
 
-  # ===== STAGE 5: Deploy (solo en develop y main) =====
+  # ===== STAGE 5: Infrastructure & Deploy (solo en develop y main) =====
   deploy:
     if: github.event_name == 'push' && (github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main')
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
     steps:
       - uses: actions/checkout@v3
 
-      - name: Configure kubectl
+      # 1. Autenticación con GCP usando Workload Identity
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v1
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      # 2. Setup Google Cloud SDK
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v1
+
+      # 3. Setup Terraform
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: latest
+
+      # 4. Setup kubectl
+      - name: Setup kubectl
         uses: azure/setup-kubectl@v3
         with:
           version: 'latest'
 
-      - name: Deploy to Kubernetes
+      # 5. Determinar ambiente y variables
+      - name: Determine environment
+        id: env
         run: |
-          mkdir -p $HOME/.kube
-          echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > $HOME/.kube/config
-          chmod 600 $HOME/.kube/config
-          
-          # Determinar el namespace según la rama
           if [ "${{ github.ref }}" = "refs/heads/main" ]; then
-            NAMESPACE="production"
-            ENVIRONMENT="prod"
+            echo "ENVIRONMENT=production" >> $GITHUB_OUTPUT
+            echo "NAMESPACE=production" >> $GITHUB_OUTPUT
+            echo "TERRAFORM_ENV=production" >> $GITHUB_OUTPUT
+            echo "CLUSTER_NAME=prod-gke-cluster" >> $GITHUB_OUTPUT
+            echo "GCS_BUCKET=tfstate-${{ vars.GCP_PROJECT_ID }}-prod" >> $GITHUB_OUTPUT
           else
-            NAMESPACE="staging"
-            ENVIRONMENT="staging"
+            echo "ENVIRONMENT=development" >> $GITHUB_OUTPUT
+            echo "NAMESPACE=development" >> $GITHUB_OUTPUT
+            echo "TERRAFORM_ENV=development" >> $GITHUB_OUTPUT
+            echo "CLUSTER_NAME=dev-gke-cluster" >> $GITHUB_OUTPUT
+            echo "GCS_BUCKET=tfstate-${{ vars.GCP_PROJECT_ID }}-dev" >> $GITHUB_OUTPUT
           fi
-          
-          # Crear namespace si no existe
-          kubectl create namespace $NAMESPACE --dry-run=client -o yaml | kubectl apply -f -
-          
-          # Aplicar manifiestos de Kubernetes
-          kubectl apply -f k8s/namespace.yaml
-          kubectl apply -f k8s/deployment.yaml -n $NAMESPACE
-          kubectl apply -f k8s/service.yaml -n $NAMESPACE
-          
-          # Rollout restart para forzar actualización de imagen
-          kubectl rollout restart deployment/nestjs-api -n $NAMESPACE
-          kubectl rollout status deployment/nestjs-api -n $NAMESPACE --timeout=5m
 
-      - name: Notify deployment
+      # 6. Initializar Terraform
+      - name: Terraform Init
+        working-directory: terraform/environments/${{ steps.env.outputs.TERRAFORM_ENV }}
+        run: |
+          terraform init \
+            -backend-config="bucket=${{ steps.env.outputs.GCS_BUCKET }}" \
+            -backend-config="prefix=nestjs-backend/${{ steps.env.outputs.TERRAFORM_ENV }}" \
+            -upgrade
+
+      # 7. Validar Terraform
+      - name: Terraform Validate
+        working-directory: terraform/environments/${{ steps.env.outputs.TERRAFORM_ENV }}
+        run: terraform validate
+
+      # 8. Planificar cambios (comment en PR)
+      - name: Terraform Plan
+        working-directory: terraform/environments/${{ steps.env.outputs.TERRAFORM_ENV }}
+        run: |
+          terraform plan \
+            -var="gcp_project_id=${{ vars.GCP_PROJECT_ID }}" \
+            -var="docker_image=ghcr.io/${{ github.repository }}:${{ github.sha }}" \
+            -var="environment=${{ steps.env.outputs.ENVIRONMENT }}" \
+            -out=tfplan
+
+      # 9. Aplicar Terraform (crear/actualizar infraestructura)
+      - name: Terraform Apply
+        working-directory: terraform/environments/${{ steps.env.outputs.TERRAFORM_ENV }}
+        run: |
+          terraform apply -auto-approve tfplan
+
+      # 10. Obtener outputs de Terraform
+      - name: Get Terraform Outputs
+        id: tf-output
+        working-directory: terraform/environments/${{ steps.env.outputs.TERRAFORM_ENV }}
+        run: |
+          CLUSTER_ENDPOINT=$(terraform output -raw cluster_endpoint 2>/dev/null || echo "")
+          KUBECTL_SETUP=$(terraform output -raw configure_kubectl 2>/dev/null || echo "")
+          echo "cluster_endpoint=$CLUSTER_ENDPOINT" >> $GITHUB_OUTPUT
+          echo "kubectl_setup=$KUBECTL_SETUP" >> $GITHUB_OUTPUT
+
+      # 11. Configurar kubectl con credenciales desde Terraform
+      - name: Configure kubectl
+        run: |
+          gcloud container clusters get-credentials ${{ steps.env.outputs.CLUSTER_NAME }} \
+            --region us-central1 \
+            --project ${{ vars.GCP_PROJECT_ID }}
+
+      # 12. Crear namespace
+      - name: Create namespace
+        run: |
+          kubectl create namespace ${{ steps.env.outputs.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
+
+      # 13. Verificar estado del cluster
+      - name: Verify cluster connectivity
+        run: |
+          kubectl cluster-info
+          kubectl get nodes
+
+      # 14. Notificar deployment éxito
+      - name: Notify deployment success
         if: success()
         run: |
-          echo "✅ Deploy completado exitosamente en ${{ github.ref }}"
-          
-      - name: Notify failure
+          echo "✅ Despliegue completado exitosamente"
+          echo "🌍 Entorno: ${{ steps.env.outputs.ENVIRONMENT }}"
+          echo "📦 Imagen: ghcr.io/${{ github.repository }}:${{ github.sha }}"
+          echo "☸️ Cluster: ${{ steps.env.outputs.CLUSTER_NAME }}"
+          echo "📍 Namespace: ${{ steps.env.outputs.NAMESPACE }}"
+
+      # 15. Notificar fallo
+      - name: Notify deployment failure
         if: failure()
         run: |
-          echo "❌ Error en deploy. Verificar logs."
+          echo "❌ Error en despliegue. Verificar logs anteriores."
+          echo "📋 Para debuggear:"
+          echo "  terraform -chdir=terraform/environments/${{ steps.env.outputs.TERRAFORM_ENV }} show"
+          echo "  kubectl describe nodes"
           exit 1

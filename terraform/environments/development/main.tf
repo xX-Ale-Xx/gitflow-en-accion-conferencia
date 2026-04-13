@@ -1,5 +1,8 @@
 # Development Environment
 
+# Data source to get access token for GKE
+data "google_client_config" "default" {}
+
 module "vpc" {
   source = "../../modules/vpc"
 
@@ -53,6 +56,49 @@ module "gke" {
   }
 }
 
+# Kubernetes applications deployment
+module "kubernetes_apps" {
+  source = "../../modules/kubernetes"
+
+  cluster_endpoint       = module.gke.cluster_endpoint
+  cluster_token          = data.google_client_config.default.access_token
+  cluster_ca_certificate = module.gke.cluster_ca_certificate
+  cluster_dependency     = module.gke.cluster_name
+
+  namespace       = var.k8s_namespace
+  create_namespace = var.create_k8s_namespace
+  app_name        = var.app_name
+  environment     = var.environment
+  image           = var.docker_image
+  replicas        = var.k8s_replicas
+
+  # Resources
+  resources_requests_cpu    = var.k8s_resources_requests_cpu
+  resources_requests_memory = var.k8s_resources_requests_memory
+  resources_limits_cpu      = var.k8s_resources_limits_cpu
+  resources_limits_memory   = var.k8s_resources_limits_memory
+
+  # HPA Configuration
+  enable_hpa              = var.enable_hpa
+  min_replicas            = var.hpa_min_replicas
+  max_replicas            = var.hpa_max_replicas
+  hpa_cpu_threshold       = var.hpa_cpu_threshold
+  hpa_memory_threshold    = var.hpa_memory_threshold
+
+  # PDB Configuration
+  enable_pdb             = var.enable_pdb
+  pdb_min_available      = var.pdb_min_available
+
+  # Network Policy
+  enable_network_policy  = var.enable_network_policy
+
+  # ConfigMap and Secrets
+  config_map_data = var.config_map_data
+  secret_data     = var.secret_data
+
+  depends_on = [module.gke]
+}
+
 # Outputs
 output "cluster_endpoint" {
   value       = module.gke.cluster_endpoint
@@ -73,4 +119,24 @@ output "region" {
 output "cluster_name" {
   value       = module.gke.cluster_name
   description = "GKE cluster name"
+}
+
+output "kubernetes_app_name" {
+  value       = module.kubernetes_apps.deployment_name
+  description = "Kubernetes deployment name"
+}
+
+output "kubernetes_service_name" {
+  value       = module.kubernetes_apps.service_name
+  description = "Kubernetes service name"
+}
+
+output "kubernetes_service_ip" {
+  value       = module.kubernetes_apps.service_ip
+  description = "Kubernetes service cluster IP"
+}
+
+output "app_url" {
+  value       = module.kubernetes_apps.app_url
+  description = "Application URL"
 }

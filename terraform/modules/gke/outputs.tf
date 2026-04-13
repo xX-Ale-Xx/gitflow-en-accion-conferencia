@@ -14,6 +14,12 @@ output "cluster_endpoint" {
   description = "GKE Cluster Endpoint"
 }
 
+output "cluster_ca_certificate" {
+  value       = google_container_cluster.primary.master_auth[0].cluster_ca_certificate
+  sensitive   = true
+  description = "GKE Cluster CA Certificate (base64 encoded)"
+}
+
 output "region" {
   value       = var.region
   description = "GCP region"
