@@ -133,6 +133,7 @@ jobs:
             -Dsonar.coverage.exclusions=**/*spec.ts,src/main.ts
             -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info
             -Dsonar.qualitygate.wait=true
+            -Dsonar.branch.name=main
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
