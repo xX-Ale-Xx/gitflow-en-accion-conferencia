@@ -183,8 +183,8 @@ jobs:
 
       - name: Create lowercase image name
         id: lowercase
-        run: echo "IMAGE_NAME_LC=${{ env.IMAGE_NAME | lower }}" >> $GITHUB_OUTPUT
         shell: bash
+        run: echo "IMAGE_NAME_LC=$(echo '${{ env.IMAGE_NAME }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
 
       - name: Log in to Container Registry
         if: github.event_name == 'push'
