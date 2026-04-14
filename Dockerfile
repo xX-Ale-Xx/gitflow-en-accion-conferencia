@@ -1,4 +1,4 @@
-FROM node:18-alpine as builder
+FROM node:18-alpine AS builder
 
 WORKDIR /app
 
@@ -18,8 +18,8 @@ WORKDIR /app
 # Install dumb-init to handle signals properly
 RUN apk add --no-cache dumb-init
 
-# Create non-root user
-RUN addgroup -g 1000 nestjs && adduser -D -u 1000 -G nestjs nestjs
+# Create non-root user with different UID/GID to avoid conflicts
+RUN addgroup -g 10001 nestjs && adduser -D -u 10001 -G nestjs nestjs
 
 COPY package*.json ./
 
