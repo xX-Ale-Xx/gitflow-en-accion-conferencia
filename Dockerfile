@@ -2,28 +2,31 @@ FROM node:18-alpine AS builder
 
 WORKDIR /app
 
-COPY package*.json ./
+# Install pnpm
+RUN npm install -g pnpm
 
-RUN npm ci
+COPY pnpm-lock.yaml package.json ./
+
+RUN pnpm install --frozen-lockfile
 
 COPY . .
 
-RUN npm run build
+RUN pnpm run build
 
 # Production stage
 FROM node:18-alpine
 
 WORKDIR /app
 
-# Install dumb-init to handle signals properly
-RUN apk add --no-cache dumb-init
+# Install dumb-init and pnpm
+RUN apk add --no-cache dumb-init && npm install -g pnpm
 
 # Create non-root user with different UID/GID to avoid conflicts
 RUN addgroup -g 10001 nestjs && adduser -D -u 10001 -G nestjs nestjs
 
-COPY package*.json ./
+COPY pnpm-lock.yaml package.json ./
 
-RUN npm ci --only=production && npm cache clean --force
+RUN pnpm install --frozen-lockfile --prod && pnpm store prune
 
 COPY --from=builder /app/dist ./dist
 
