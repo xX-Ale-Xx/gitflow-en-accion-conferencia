@@ -119,8 +119,8 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Download coverage reports
-        uses: actions/download-artifact@v3
+      - name: Upload coverage reports
+        uses: codecov/codecov-action@v4
 
       - name: SonarQube Scan
         uses: SonarSource/sonarcloud-github-action@master
