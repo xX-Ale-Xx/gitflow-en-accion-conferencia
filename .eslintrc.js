@@ -1,41 +1,41 @@
-{
-  "root": true,
-  "env": {
-    "node": true,
-    "jest": true
+module.exports = {
+  root: true,
+  env: {
+    node: true,
+    jest: true
   },
-  "extends": [
-    "eslint:recommended",
-    "plugin:@typescript-eslint/recommended",
-    "prettier"
+  extends: [
+    'eslint:recommended',
+    'plugin:@typescript-eslint/recommended',
+    'prettier'
   ],
-  "parser": "@typescript-eslint/parser",
-  "parserOptions": {
-    "ecmaVersion": 2021,
-    "sourceType": "module"
+  parser: '@typescript-eslint/parser',
+  parserOptions: {
+    ecmaVersion: 2021,
+    sourceType: 'module'
   },
-  "plugins": [
-    "@typescript-eslint"
+  plugins: [
+    '@typescript-eslint'
   ],
-  "rules": {
-    "quotes": [
-      "error",
-      "single",
+  rules: {
+    quotes: [
+      'error',
+      'single',
       {
-        "avoidEscape": true
+        avoidEscape: true
       }
     ],
-    "semi": [
-      "error",
-      "always"
+    semi: [
+      'error',
+      'always'
     ],
-    "@typescript-eslint/no-explicit-any": "warn",
-    "@typescript-eslint/explicit-function-return-types": "warn",
-    "@typescript-eslint/no-unused-vars": [
-      "error",
+    '@typescript-eslint/no-explicit-any': 'warn',
+    '@typescript-eslint/explicit-function-return-types': 'warn',
+    '@typescript-eslint/no-unused-vars': [
+      'error',
       {
-        "argsIgnorePattern": "^_"
+        argsIgnorePattern: '^_'
       }
     ]
   }
-}
+};
