@@ -30,7 +30,6 @@ module.exports = {
       'always'
     ],
     '@typescript-eslint/no-explicit-any': 'warn',
-    '@typescript-eslint/explicit-function-return-types': 'warn',
     '@typescript-eslint/no-unused-vars': [
       'error',
       {

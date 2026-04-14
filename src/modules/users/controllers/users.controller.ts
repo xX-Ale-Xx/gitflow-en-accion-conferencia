@@ -6,7 +6,6 @@ import {
   Patch,
   Param,
   Delete,
-  HttpStatus,
   ParseIntPipe,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
