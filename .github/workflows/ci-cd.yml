@@ -126,7 +126,7 @@ jobs:
         uses: SonarSource/sonarcloud-github-action@master
         with:
           args: >
-            -Dsonar.projectKey=xx-ale-xx_gitflow-en-accion-conferencia
+            -Dsonar.projectKey=xX-Ale-Xx_gitflow-en-accion-conferencia
             -Dsonar.organization=xx-ale-xx
             -Dsonar.sources=src
             -Dsonar.exclusions=**/*spec.ts,**/*dto.ts
