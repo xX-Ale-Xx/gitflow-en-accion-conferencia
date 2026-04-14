@@ -1,2 +1,0 @@
-# Terraform Environment: Production
-# Run: cd environments/production && terraform init && terraform apply -var-file="terraform.tfvars"

@@ -13,7 +13,7 @@ import { UsersModule } from './modules/users/users.module';
     }),
     TypeOrmModule.forRootAsync({
       inject: [ConfigService],
-      useFactory: (configService: ConfigService) => configService.get('database'),
+      useFactory: (configService: ConfigService) => configService.get('database') || {},
     }),
     UsersModule,
   ],
