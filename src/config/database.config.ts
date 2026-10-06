@@ -8,5 +8,8 @@ export default registerAs('database', () => ({
   logging: process.env.DB_LOGGING === 'true',
   migrations: ['dist/migrations/**/*.js'],
   subscribers: ['dist/subscribers/**/*.js'],
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+  ssl:
+    process.env.DB_SSL === 'true' || process.env.NODE_ENV === 'production'
+      ? { rejectUnauthorized: false }
+      : false,
 }));
