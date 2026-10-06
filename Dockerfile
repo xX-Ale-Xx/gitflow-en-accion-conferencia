@@ -5,7 +5,7 @@ WORKDIR /app
 # Install pnpm
 RUN npm install -g pnpm
 
-COPY pnpm-lock.yaml package.json ./
+COPY pnpm-lock.yaml package.json pnpm-workspace.yaml ./
 
 RUN pnpm install --frozen-lockfile
 
@@ -24,7 +24,7 @@ RUN apk add --no-cache dumb-init && npm install -g pnpm
 # Create non-root user with different UID/GID to avoid conflicts
 RUN addgroup -g 10001 nestjs && adduser -D -u 10001 -G nestjs nestjs
 
-COPY pnpm-lock.yaml package.json ./
+COPY pnpm-lock.yaml package.json pnpm-workspace.yaml ./
 
 RUN pnpm install --frozen-lockfile --prod && pnpm store prune
 
